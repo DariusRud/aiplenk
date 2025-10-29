@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIPLENK Prototipas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Papildomi stiliai sklandesniam veikimui */
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal {
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .status-nauja { background-color: #e0e7ff; color: #3730a3; }
+        .status-reikia-perziuros { background-color: #fef3c7; color: #92400e; }
+        .status-validuota { background-color: #d1fae5; color: #065f46; }
+
+        /* FR-3 Eilučių statusai */
+        .item-status-atpazinta { border-left: 4px solid #10b981; }
+        .item-status-reikia-patvirtinimo { border-left: 4px solid #f59e0b; background-color: #fefce8; }
+        .item-status-neatpazinta { border-left: 4px solid #ef4444; background-color: #fef2f2; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans" x-data="aiplenkApp()">
+
+    <div class="flex h-screen">
+        <!-- Šoninis meniu -->
+        <nav class="w-64 bg-white shadow-md flex flex-col">
+            <div class="p-6 text-2xl font-bold text-indigo-700">AIPLENK</div>
+            <ul class="flex-grow">
+                <li><a @click.prevent="currentView = 'dashboard'" href="#" class="flex items-center p-4 text-gray-700 hover:bg-gray-50" :class="{ 'bg-indigo-50 text-indigo-700 font-semibold': currentView === 'dashboard' }"><i class="fas fa-chart-pie w-6 mr-3"></i>Analitika</a></li>
+                <li><a @click.prevent="currentView = 'invoices'" href="#" class="flex items-center p-4 text-gray-700 hover:bg-gray-50" :class="{ 'bg-indigo-50 text-indigo-700 font-semibold': currentView === 'invoices' }"><i class="fas fa-file-invoice w-6 mr-3"></i>Sąskaitos</a></li>
+                <li><a @click.prevent="currentView = 'products'" href="#" class="flex items-center p-4 text-gray-700 hover:bg-gray-50" :class="{ 'bg-indigo-50 text-indigo-700 font-semibold': currentView === 'products' }"><i class="fas fa-boxes w-6 mr-3"></i>Prekių Medis</a></li>
+                <li><a @click.prevent="currentView = 'export'" href="#" class="flex items-center p-4 text-gray-700 hover:bg-gray-50" :class="{ 'bg-indigo-50 text-indigo-700 font-semibold': currentView === 'export' }"><i class="fas fa-file-export w-6 mr-3"></i>Eksportas</a></li>
+            </ul>
+        </nav>
+
+        <!-- Pagrindinis turinys -->
+        <main class="flex-1 overflow-y-auto p-8">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-semibold text-gray-800" x-text="viewTitle"></h1>
+                <button @click="showUploadModal = true" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md flex items-center">
+                    <i class="fas fa-plus mr-2"></i> Įkelti Sąskaitą (FR-1)
+                </button>
+            </div>
+
+            <!-- Nėra sąskaitų pranešimas -->
+            <template x-if="invoices.length === 0 && currentView === 'invoices'">
+                <div class="bg-white p-12 rounded-lg shadow-md text-center">
+                    <i class="fas fa-file-alt text-6xl text-gray-300 mb-4"></i>
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-2">Kol kas sąskaitų nėra</h2>
+                    <p class="text-gray-500 mb-6">Pradėkite darbą įkeldami pirmąją sąskaitą.</p>
+                    <button @click="showUploadModal = true" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-lg shadow-md">
+                        Įkelti Sąskaitą
+                    </button>
+                </div>
+            </template>
+
+            <!-- Analitikos Skydelis (FR-5) -->
+            <div x-show="currentView === 'dashboard'">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 uppercase">Iš viso įkelta</p>
+                                <p class="text-3xl font-bold text-gray-800" x-text="stats.totalUploaded"></p>
+                            </div>
+                            <div class="bg-indigo-100 text-indigo-600 p-3 rounded-full">
+                                <i class="fas fa-upload fa-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 uppercase">Reikia Peržiūros</p>
+                                <p class="text-3xl font-bold text-yellow-600" x-text="stats.needsReview"></p>
+                            </div>
+                            <div class="bg-yellow-100 text-yellow-600 p-3 rounded-full">
+                                <i class="fas fa-exclamation-triangle fa-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 uppercase">Korekcijų Atlikta</p>
+                                <p class="text-3xl font-bold text-gray-800" x-text="stats.correctionsMade"></p>
+                            </div>
+                            <div class="bg-gray-100 text-gray-600 p-3 rounded-full">
+                                <i class="fas fa-pencil-alt fa-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 uppercase">Validuota</p>
+                                <p class="text-3xl font-bold text-green-600" x-text="stats.validated"></p>
+                            </div>
+                            <div class="bg-green-100 text-green-600 p-3 rounded-full">
+                                <i class="fas fa-check-circle fa-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Top 5 Tiekėjai su Neatitikimais</h2>
+                    <template x-if="stats.topProblematicSuppliers.length === 0">
+                        <p class="text-gray-500">Nėra tiekėjų, generuojančių neatitikimus.</p>
+                    </template>
+                    <template x-for="supplier in stats.topProblematicSuppliers" :key="supplier.name">
+                        <div class="flex justify-between items-center py-3 border-b last:border-b-0">
+                            <span x-text="supplier.name" class="text-gray-700"></span>
+                            <span class="text-red-500 font-semibold" x-text="supplier.errors + ' neatitikimai'"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Sąskaitų Sąrašas (FR-3 Pagrindas) -->
+            <div x-show="currentView === 'invoices' && invoices.length > 0">
+                <div class="bg-white shadow-md rounded-lg overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statusas</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tiekėjas</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sąsk. Nr.</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suma (be PVM)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Veiksmai</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="invoice in invoices" :key="invoice.id">
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="status-badge" :class="statusClass(invoice.status)" x-text="invoice.status"></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="invoice.supplier_name"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="invoice.invoice_number"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="invoice.invoice_date"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium" x-text="'€' + invoice.total_net.toFixed(2)"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <button @click="openInvoiceDetail(invoice.id)" class="text-indigo-600 hover:text-indigo-900">
+                                            <span x-show="invoice.status === 'REIKIA PERŽIŪROS'">Valdyti</span>
+                                            <span x-show="invoice.status !== 'REIKIA PERŽIŪROS'">Peržiūrėti</span>
+                                        </button>
+                                        <button @click="showExportModal(invoice)" x-show="invoice.status === 'VALIDUOTA'" class="ml-4 text-green-600 hover:text-green-900" title="Eksportuoti (FR-6)">
+                                            <i class="fas fa-file-export"></i>
+                                        </button>
+                                        <span x-show="invoice.exported" class="ml-2 text-blue-500" title="Sąskaita buvo eksportuota">📤</span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Prekių Medis (Product_Master) -->
+            <div x-show="currentView === 'products'">
+                <div class="bg-white shadow-md rounded-lg overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vidinis kodas</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pavadinimas</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mato vnt.</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tiekėjo ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tiekėjo prekės kodas</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="product in productMaster" :key="product.id">
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="product.internal_code"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.description"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.uom"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.supplier_id"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.supplier_product_code"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Eksporto puslapis (FR-4) -->
+            <div x-show="currentView === 'export'">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Eksportuoti Validuotas Sąskaitas</h2>
+                    <p class="text-gray-600 mb-4">Pasirinkite sąskaitas ir eksporto šabloną. Eksportuoti galima tik sąskaitas su statusu "VALIDUOTA".</p>
+                    
+                    <div class="mb-4">
+                        <label for="exportTemplate" class="block text-sm font-medium text-gray-700 mb-2">Eksporto Šablonas (FR-4)</label>
+                        <select id="exportTemplate" name="exportTemplate" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                            <option>Rivilės pirkimai (.csv)</option>
+                            <option>Optimum pirkimai (.xlsx)</option>
+                            <option>Bendra ataskaita (.csv)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-6 max-h-72 overflow-y-auto border border-gray-200 rounded-md">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="p-4 text-left">
+                                        <input type="checkbox" @change="toggleSelectAll($event)" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tiekėjas</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sąsk. Nr.</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suma</th>
+                                </a>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <template x-for="invoice in getExportableInvoices()" :key="invoice.id">
+                                    <tr>
+                                        <td class="p-4">
+                                            <input type="checkbox" x-model="invoice.selectedForExport" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                        </td>
+                                        <td class="px-6 py-4 text-sm" x-text="invoice.supplier_name"></td>
+                                        <td class="px-6 py-4 text-sm" x-text="invoice.invoice_number"></td>
+                                        <td class="px-6 py-4 text-sm" x-text="'€' + invoice.total_net.toFixed(2)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <button @click="performExport()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md flex items-center justify-center">
+                        <i class="fas fa-file-download mr-2"></i> Eksportuoti Pasirinktas
+                    </button>
+                </div>
+            </div>
+
+            <!-- Pranešimas apie sėkmingą veiksmą -->
+            <div x-show="toast.show" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100 transform translate-y-0" x-transition:leave-end="opacity-0 transform translate-y-2" class="fixed bottom-10 right-10 z-50">
+                <div class="flex items-center rounded-lg px-6 py-4 text-white shadow-lg" :class="toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'">
+                    <i class="fas mr-3" :class="toast.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'"></i>
+                    <span x-text="toast.message"></span>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Sąskaitos Detalių Modal (FR-3 Neatitikimų Valdymas) -->
+    <div x-show="showDetailModal" class="fixed inset-0 z-30 overflow-y-auto modal-backdrop flex items-center justify-center" style="display: none;">
+        <div @click.away="showDetailModal = false" class="bg-white rounded-xl shadow-2xl w-full max-w-6xl m-8 max-h-[90vh] flex flex-col modal" x-show="showDetailModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+            <!-- Modal Antraštė -->
+            <div class="flex justify-between items-center p-6 border-b border-gray-200">
+                <div>
+                    <h2 class="text-2xl font-semibold text-gray-800">Sąskaitos Valdymas (FR-3)</h2>
+                    <p class="text-sm text-gray-500" x-show="currentInvoice" x-text="currentInvoice.supplier_name + ' | ' + currentInvoice.invoice_number"></p>
+                </div>
+                <button @click="showDetailModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times fa-xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Turinys -->
+            <div class="p-6 flex-grow overflow-y-auto">
+                <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+                    <div><strong>Statusas:</strong> <span class="status-badge" :class="statusClass(currentInvoice.status)" x-text="currentInvoice.status"></span></div>
+                    <div><strong>Data:</strong> <span x-text="currentInvoice.invoice_date"></span></div>
+                    <div><strong>Suma (be PVM):</strong> <span x-text="'€' + currentInvoice.total_net.toFixed(2)"></span></div>
+                    <div><strong>PVM:</strong> <span x-text="'€' + currentInvoice.total_vat.toFixed(2)"></span></div>
+                </div>
+
+                <h3 class="text-lg font-semibold text-gray-700 mt-6 mb-3">Sąskaitos eilutės</h3>
+                <div class="space-y-3">
+                    <!-- Eilutės pavyzdys -->
+                    <template x-for="(item, index) in invoiceItems.filter(i => i.invoice_id === currentInvoice.id)" :key="item.id">
+                        <div class="border rounded-lg p-4" :class="itemStatusClass(item.status)">
+                            <div class="grid grid-cols-12 gap-4 items-center">
+                                <!-- Eilutės informacija -->
+                                <div class="col-span-12 md:col-span-7">
+                                    <p class="font-semibold text-gray-800" x-text="item.original_description"></p>
+                                    <p class="text-sm text-gray-500">
+                                        <span class="mr-4"><strong>Tiekėjo kodas:</strong> <span x-text="item.original_supplier_code || 'N/A'"></span></span>
+                                        <span class="mr-4"><strong>Kiekis:</strong> <span x-text="item.quantity"></span> <span x-text="item.original_uom"></span></span>
+                                        <span><strong>Kaina:</strong> <span x-text="'€' + item.price_net.toFixed(2)"></span></span>
+                                    </p>
+                                </div>
+                                
+                                <!-- Eilutės Statusas ir Veiksmai -->
+                                <div class="col-span-12 md:col-span-5">
+                                    <!-- ATPAŽINTA -->
+                                    <div x-show="item.status === 'ATPAŽINTA'" class="flex items-center text-green-600">
+                                        <i class="fas fa-check-circle fa-lg mr-2"></i>
+                                        <div>
+                                            <p class="font-semibold">Atpažinta</p>
+                                            <p class="text-sm" x-text="getProductName(item.product_master_id)"></p>
+                                        </div>
+                                    </div>
+
+                                    <!-- REIKIA PATVIRTINIMO (FR-3) -->
+                                    <div x-show="item.status === 'REIKIA PATVIRTINIMO'">
+                                        <p class="font-semibold text-yellow-700 mb-2"><i class="fas fa-question-circle mr-1"></i> Sistema siūlo:</p>
+                                        <p class="text-sm bg-yellow-100 p-2 rounded" x-text="getProductName(item.suggested_product_id)"></p>
+                                        <div class="mt-3">
+                                            <button @click="confirmSuggestion(item.id)" class="bg-green-500 hover:bg-green-600 text-white text-sm font-bold py-1 px-3 rounded-md mr-2">
+                                                <i class="fas fa-check mr-1"></i> Taip, Patvirtinti
+                                            </button>
+                                            <button @click="rejectSuggestion(item.id)" class="bg-red-500 hover:bg-red-600 text-white text-sm font-bold py-1 px-3 rounded-md">
+                                                <i class="fas fa-times mr-1"></i> Ne, tai kita prekė
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- NEATPAŽINTA (FR-3) -->
+                                    <div x-show="item.status === 'NEATPAŽINTA'">
+                                        <p class="font-semibold text-red-700 mb-2"><i class="fas fa-times-circle mr-1"></i> Neatpažinta</p>
+                                        <p class="text-sm text-gray-600 mb-3">Susiekite šią eilutę su preke iš katalogo arba sukurkite naują.</p>
+                                        <button @click="openLinkModal(item.id)" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-1 px-3 rounded-md">
+                                            <i class="fas fa-link mr-1"></i> Ranka susieti prekę
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Modal Apačia -->
+            <div class="p-6 bg-gray-50 border-t border-gray-200 rounded-b-xl text-right">
+                <button @click="showDetailModal = false" class="text-gray-700 font-medium py-2 px-4 rounded-lg mr-2">Uždaryti</button>
+                <button @click="validateInvoice()" :disabled="!isInvoiceResolvable()" 
+                        class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md"
+                        :class="{ 'opacity-50 cursor-not-allowed': !isInvoiceResolvable(), 'hover:bg-green-700': isInvoiceResolvable() }">
+                    Patvirtinti Sąskaitą
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prekės Susiejimo Modal (FR-3 / G-1) -->
+    <div x-show="showLinkModal" class="fixed inset-0 z-40 overflow-y-auto modal-backdrop flex items-center justify-center" style="display: none;">
+        <div @click.away="showLinkModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 modal" x-show="showLinkModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+            <div class="p-6 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800">Susieti prekę (FR-3 / G-1)</h3>
+                <p class="text-sm text-gray-500" x-show="currentItem" x-text="'Originali eilutė: ' + currentItem.original_description"></p>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <label for="productSearch" class="block text-sm font-medium text-gray-700 mb-2">Išmanioji Paieška (G-1)</label>
+                    <div class="relative">
+                        <input type="text" id="productSearch" x-model="productSearchQuery" @input.debounce.300ms="searchProducts()" class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md" placeholder="Ieškoti pagal kodą ar pavadinimą...">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    </div>
+                </div>
+                
+                <div class="max-h-64 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-200">
+                    <template x-if="productSearchResults.length === 0">
+                        <p class="p-4 text-gray-500 text-center">Produktų nerasta. Bandykite kitą paieškos frazę.</p>
+                    </template>
+                    <template x-for="product in productSearchResults" :key="product.id">
+                        <div class="flex justify-between items-center p-3 hover:bg-gray-50">
+                            <div>
+                                <p class="font-medium text-gray-900" x-text="product.description"></p>
+                                <p class="text-sm text-gray-500"><span x-text="product.internal_code"></span> | <span x-text="product.supplier_id"></span> | <span x-text="product.supplier_product_code"></span></p>
+                            </div>
+                            <button @click="linkProduct(product.id)" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-1 px-3 rounded-md">
+                                Susieti
+                            </button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            <div class="p-6 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+                <button class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg text-sm">
+                    <i class="fas fa-plus mr-1"></i> Sukurti Naują Prekę
+                </button>
+                <button @click="showLinkModal = false" class="text-gray-700 font-medium py-2 px-4 rounded-lg">Atšaukti</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sąskaitos Įkėlimo Modal (FR-1) -->
+    <div x-show="showUploadModal" class="fixed inset-0 z-30 overflow-y-auto modal-backdrop flex items-center justify-center" style="display: none;">
+        <div @click.away="showUploadModal = false" class="bg-white rounded-lg shadow-xl w-full max-w-lg m-4 modal" x-show="showUploadModal" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+            <div class="p-6 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800">Įkelti Sąskaitas (FR-1)</h3>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-600 mb-4">Šis prototipas simuliuos sąskaitų įkėlimą. Pasirinkite, kokio tipo sąskaitą norite įkelti, kad pamatytumėte skirtingus scenarijus.</p>
+                <div class="space-y-3">
+                    <button @click="simulateUpload('good')" class="w-full flex items-center text-left p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                        <i class="fas fa-file-invoice text-green-500 text-2xl mr-4"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">"Gera" Sąskaita</p>
+                            <p class="text-sm text-gray-600">Visos eilutės bus atpažintos (100% ATPAŽINTA).</p>
+                        </div>
+                    </button>
+                    <button @click="simulateUpload('mixed')" class="w-full flex items-center text-left p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                        <i class="fas fa-file-invoice text-yellow-500 text-2xl mr-4"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">"Mišri" Sąskaita</p>
+                            <p class="text-sm text-gray-600">Bus eilutės visų 3 statusų (ATPAŽINTA, REIKIA PATVIRTINIMO, NEATPAŽINTA).</p>
+                        </div>
+                    </button>
+                    <button @click="simulateUpload('bad')" class="w-full flex items-center text-left p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                        <i class="fas fa-file-invoice text-red-500 text-2xl mr-4"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">"Bloga" Sąskaita</p>
+                            <p class="text-sm text-gray-600">Dauguma eilučių bus NEATPAŽINTOS.</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6 bg-gray-50 border-t border-gray-200 text-right">
+                <button @click="showUploadModal = false" class="text-gray-700 font-medium py-2 px-4 rounded-lg">Atšaukti</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Eksporto Modal (FR-4 / FR-6) -->
+    <div x-show="showExportModalState" class="fixed inset-0 z-30 overflow-y-auto modal-backdrop flex items-center justify-center" style="display: none;">
+        <div @click.away="showExportModalState = false" class="bg-white rounded-lg shadow-xl w-full max-w-lg m-4 modal" x-show="showExportModalState" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
+            <div class="p-6 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800">Eksportuoti Sąskaitą (FR-4)</h3>
+                <p class="text-sm text-gray-500" x-show="currentInvoice" x-text="'Sąskaita: ' + currentInvoice.invoice_number"></p>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-600 mb-4">Pasirinkite eksporto šabloną šiai sąskaitai. Kiekvienas eksportas bus užfiksuotas audito žurnale (FR-6).</p>
+                <label for="modalExportTemplate" class="block text-sm font-medium text-gray-700 mb-2">Eksporto Šablonas</label>
+                <select id="modalExportTemplate" x-model="selectedTemplate" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                    <option>Rivilės pirkimai (.csv)</option>
+                    <option>Optimum pirkimai (.xlsx)</option>
+                    <option>Bendra ataskaita (.csv)</option>
+                </select>
+            </div>
+            <div class="p-6 bg-gray-50 border-t border-gray-200 text-right">
+                <button @click="showExportModalState = false" class="text-gray-700 font-medium py-2 px-4 rounded-lg mr-2">Atšaukti</button>
+                <button @click="performSingleExport()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md">
+                    <i class="fas fa-file-download mr-2"></i> Eksportuoti
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Alpine.js script -->
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('aiplenkApp', () => ({
+                // Duomenų Modeliai (Simuliacija)
+                productMaster: [
+                    { id: 1, internal_code: 'VAR001', description: 'Varžtas M6x50 DIN 933', uom: 'vnt.', supplier_id: 'LT100001234512', supplier_product_code: 'SRA-M6-50' },
+                    { id: 2, internal_code: 'VER001', description: 'Veržlė M6 DIN 934', uom: 'vnt.', supplier_id: 'LT100001234512', supplier_product_code: 'VER-M6' },
+                    { id: 3, internal_code: 'PLK001', description: 'Plokštelė M6 DIN 125', uom: 'vnt.', supplier_id: 'LT100001234512', supplier_product_code: 'PL-M6' },
+                    { id: 4, internal_code: 'MED001', description: 'Medžio sraigtas 3.5x40', uom: 'vnt.', supplier_id: 'LT100005678912', supplier_product_code: 'MS-3540' },
+                    { id: 5, internal_code: 'MED002', description: 'Medžio sraigtas 4.0x50', uom: 'vnt.', supplier_id: 'LT100005678912', supplier_product_code: 'MS-4050' },
+                    { id: 6, internal_code: 'GRT001', description: 'Grąžtas metalui 5mm', uom: 'vnt.', supplier_id: 'LT100009876543', supplier_product_code: 'G-MET-5' }
+                ],
+                invoices: [],
+                invoiceItems: [],
+                exportLog: [],
+                
+                // Būsena
+                currentView: 'dashboard',
+                showDetailModal: false,
+                showLinkModal: false,
+                showUploadModal: false,
+                showExportModalState: false,
+                currentInvoiceId: null,
+                currentItemId: null,
+                productSearchQuery: '',
+                productSearchResults: [],
+                selectedTemplate: 'Rivilės pirkimai (.csv)',
+
+                // Pranešimų (Toast) būsena
+                toast: {
+                    show: false,
+                    message: '',
+                    type: 'success'
+                },
+
+                // Statistikos objektas (FR-5)
+                stats: {
+                    totalUploaded: 0,
+                    needsReview: 0,
+                    correctionsMade: 0,
+                    validated: 0,
+                    topProblematicSuppliers: []
+                },
+
+                // Getteriai ir pagalbinės funkcijos
+                get currentInvoice() {
+                    return this.invoices.find(inv => inv.id === this.currentInvoiceId) || { total_net: 0, total_vat: 0 };
+                },
+                get currentItem() {
+                    return this.invoiceItems.find(item => item.id === this.currentItemId) || { original_description: '' };
+                },
+                get viewTitle() {
+                    switch(this.currentView) {
+                        case 'dashboard': return 'Analitikos Skydelis (FR-5)';
+                        case 'invoices': return 'Sąskaitų Sąrašas';
+                        case 'products': return 'Prekių Medis (Product_Master)';
+                        case 'export': return 'Eksportas (FR-4)';
+                        default: return 'AIPLENK';
+                    }
+                },
+                
+                init() {
+                    this.updateStats();
+                },
+
+                // Statistikos atnaujinimas (FR-5)
+                updateStats() {
+                    this.stats.totalUploaded = this.invoices.length;
+                    this.stats.needsReview = this.invoices.filter(inv => inv.status === 'REIKIA PERŽIŪROS').length;
+                    this.stats.validated = this.invoices.filter(inv => inv.status === 'VALIDUOTA').length;
+                    // 'correctionsMade' yra simuliuojamas
+                    
+                    // Simuliuojam top tiekėjus su problemomis
+                    const supplierErrors = {};
+                    this.invoiceItems
+                        .filter(item => item.original_status === 'NEATPAŽINTA' || item.original_status === 'REIKIA PATVIRTINIMO')
+                        .forEach(item => {
+                            const invoice = this.invoices.find(inv => inv.id === item.invoice_id);
+                            if (invoice) {
+                                if (!supplierErrors[invoice.supplier_name]) {
+                                    supplierErrors[invoice.supplier_name] = 0;
+                                }
+                                supplierErrors[invoice.supplier_name]++;
+                            }
+                        });
+                    
+                    this.stats.topProblematicSuppliers = Object.entries(supplierErrors)
+                        .map(([name, errors]) => ({ name, errors }))
+                        .sort((a, b) => b.errors - a.errors)
+                        .slice(0, 5);
+                },
+
+                // Simuliuoti Įkėlimą (FR-1)
+                simulateUpload(type) {
+                    const newInvoiceId = Date.now();
+                    let newInvoice = {};
+                    let newItems = [];
+                    let overallStatus = 'VALIDUOTA'; // Pagal nutylėjimą
+
+                    switch(type) {
+                        case 'good':
+                            newInvoice = { id: newInvoiceId, supplier_name: 'UAB "Tvirtas Varžtas"', supplier_id: 'LT100001234512', invoice_number: 'TV-' + Math.floor(Math.random() * 1000), invoice_date: '2025-10-28', total_net: 15.00, total_vat: 3.15, status: 'VALIDUOTA', exported: false, selectedForExport: false };
+                            newItems = [
+                                { id: newInvoiceId + 1, invoice_id: newInvoiceId, product_master_id: 1, original_description: 'Varžtas M6x50', original_supplier_code: 'SRA-M6-50', original_uom: 'vnt', quantity: 100, price_net: 0.10, status: 'ATPAŽINTA', original_status: 'ATPAŽINTA' },
+                                { id: newInvoiceId + 2, invoice_id: newInvoiceId, product_master_id: 2, original_description: 'Veržlė M6', original_supplier_code: 'VER-M6', original_uom: 'vnt', quantity: 100, price_net: 0.05, status: 'ATPAŽINTA', original_status: 'ATPAŽINTA' }
+                            ];
+                            overallStatus = 'VALIDUOTA';
+                            break;
+                        case 'mixed':
+                            newInvoice = { id: newInvoiceId, supplier_name: 'UAB "Statybų Partneris"', supplier_id: 'LT100005678912', invoice_number: 'SP-' + Math.floor(Math.random() * 1000), invoice_date: '2025-10-27', total_net: 42.50, total_vat: 8.93, status: 'REIKIA PERŽIŪROS', exported: false, selectedForExport: false };
+                            newItems = [
+                                { id: newInvoiceId + 1, invoice_id: newInvoiceId, product_master_id: 4, original_description: 'Medžio sraigtas 3.5x40', original_supplier_code: 'MS-3540', original_uom: 'vnt', quantity: 200, price_net: 0.15, status: 'ATPAŽINTA', original_status: 'ATPAŽINTA' },
+                                { id: newInvoiceId + 2, invoice_id: newInvoiceId, product_master_id: null, original_description: 'Medžio sraigtas 4.0x50mm', original_supplier_code: 'MS-4050', original_uom: 'vnt', quantity: 100, price_net: 0.20, status: 'REIKIA PATVIRTINIMO', original_status: 'REIKIA PATVIRTINIMO', suggested_product_id: 5 }, // Simuliuojam panašumą (FR-2)
+                                { id: newInvoiceId + 3, invoice_id: newInvoiceId, product_master_id: null, original_description: 'Vinys 100mm', original_supplier_code: 'VIN-100', original_uom: 'kg', quantity: 1, price_net: 2.50, status: 'NEATPAŽINTA', original_status: 'NEATPAŽINTA' } // Simuliuojam neatpažintą (FR-2)
+                            ];
+                            overallStatus = 'REIKIA PERŽIŪROS';
+                            break;
+                        case 'bad':
+                            newInvoice = { id: newInvoiceId, supplier_name: 'UAB "Nežinomi Įrankiai"', supplier_id: 'LT100009876543', invoice_number: 'NI-' + Math.floor(Math.random() * 1000), invoice_date: '2025-10-26', total_net: 18.00, total_vat: 3.78, status: 'REIKIA PERŽIŪROS', exported: false, selectedForExport: false };
+                            newItems = [
+                                { id: newInvoiceId + 1, invoice_id: newInvoiceId, product_master_id: null, original_description: 'Grąžtas 5mm', original_supplier_code: 'G-MET-5', original_uom: 'vnt', quantity: 2, price_net: 4.00, status: 'REIKIA PATVIRTINIMO', original_status: 'REIKIA PATVIRTINIMO', suggested_product_id: 6 }, // Panašus pavadinimas
+                                { id: newInvoiceId + 2, invoice_id: newInvoiceId, product_master_id: null, original_description: 'Atsuktuvas PH2', original_supplier_code: 'AT-PH2', original_uom: 'vnt', quantity: 1, price_net: 5.00, status: 'NEATPAŽINTA', original_status: 'NEATPAŽINTA' },
+                                { id: newInvoiceId + 3, invoice_id: newInvoiceId, product_master_id: null, original_description: 'Plaktukas 500g', original_supplier_code: 'PL-500', original_uom: 'vnt', quantity: 1, price_net: 5.00, status: 'NEATPAŽINTA', original_status: 'NEATPAŽINTA' }
+                            ];
+                            overallStatus = 'REIKIA PERŽIŪROS';
+                            break;
+                    }
+                    
+                    newInvoice.status = overallStatus;
+                    this.invoices.unshift(newInvoice);
+                    this.invoiceItems.push(...newItems);
+                    
+                    this.showUploadModal = false;
+                    this.showToast('Sąskaita sėkmingai simuliuota ir įkelta.', 'success');
+                    this.currentView = 'invoices';
+                    this.updateStats();
+                },
+
+                // Modalų valdymas
+                openInvoiceDetail(invoiceId) {
+                    this.currentInvoiceId = invoiceId;
+                    this.showDetailModal = true;
+                },
+                openLinkModal(itemId) {
+                    this.currentItemId = itemId;
+                    this.productSearchQuery = this.currentItem.original_description.substring(0, 10); // Pradinė paieška
+                    this.searchProducts();
+                    this.showLinkModal = true;
+                },
+
+                // Neatitikimų Valdymas (FR-3)
+                confirmSuggestion(itemId) {
+                    const item = this.invoiceItems.find(i => i.id === itemId);
+                    item.product_master_id = item.suggested_product_id;
+                    item.status = 'ATPAŽINTA';
+                    this.stats.correctionsMade++;
+                    this.showToast('Prekė sėkmingai patvirtinta.', 'success');
+                    this.checkInvoiceStatus(item.invoice_id);
+                },
+                rejectSuggestion(itemId) {
+                    const item = this.invoiceItems.find(i => i.id === itemId);
+                    item.status = 'NEATPAŽINTA';
+                    item.suggested_product_id = null;
+                    this.stats.correctionsMade++;
+                },
+                linkProduct(productId) {
+                    const item = this.invoiceItems.find(i => i.id === this.currentItemId);
+                    item.product_master_id = productId;
+                    item.status = 'ATPAŽINTA';
+                    this.stats.correctionsMade++;
+                    this.showToast('Prekė sėkmingai susieta.', 'success');
+                    this.showLinkModal = false;
+                    this.checkInvoiceStatus(item.invoice_id);
+                },
+                
+                // Patikrina, ar visos sąskaitos eilutės išspręstos
+                checkInvoiceStatus(invoiceId) {
+                    const items = this.invoiceItems.filter(i => i.invoice_id === invoiceId);
+                    const allResolved = items.every(i => i.status === 'ATPAŽINTA');
+                    if (allResolved) {
+                        // Nėra aktyvaus modal, atnaujinam fone
+                        if (!this.showDetailModal) {
+                            const invoice = this.invoices.find(inv => inv.id === invoiceId);
+                            if (invoice.status !== 'VALIDUOTA') {
+                                invoice.status = 'VALIDUOTA';
+                                this.showToast(`Sąskaita ${invoice.invoice_number} automatiškai validuota.`, 'success');
+                                this.updateStats();
+                            }
+                        }
+                    }
+                },
+                
+                isInvoiceResolvable() {
+                    if (!this.currentInvoiceId) return false;
+                    const items = this.invoiceItems.filter(i => i.invoice_id === this.currentInvoiceId);
+                    return items.every(i => i.status === 'ATPAŽINTA');
+                },
+                
+                validateInvoice() {
+                    if (this.isInvoiceResolvable()) {
+                        this.currentInvoice.status = 'VALIDUOTA';
+                        this.showDetailModal = false;
+                        this.showToast('Sąskaita sėkmingai validuota.', 'success');
+                        this.updateStats();
+                    }
+                },
+
+                // Paieška (G-1)
+                searchProducts() {
+                    if (this.productSearchQuery.length < 2) {
+                        this.productSearchResults = this.productMaster.slice(0, 5); // Rodyti kelis pagal nutylėjimą
+                        return;
+                    }
+                    const query = this.productSearchQuery.toLowerCase();
+                    this.productSearchResults = this.productMaster.filter(p => 
+                        p.description.toLowerCase().includes(query) ||
+                        p.internal_code.toLowerCase().includes(query) ||
+                        p.supplier_product_code.toLowerCase().includes(query)
+                    ).slice(0, 10);
+                },
+
+                // Eksportas (FR-4 / FR-6)
+                showExportModal(invoice) {
+                    this.currentInvoiceId = invoice.id;
+                    this.showExportModalState = true;
+                },
+                performSingleExport() {
+                    this.exportLog.push({ 
+                        invoice_id: this.currentInvoiceId, 
+                        template: this.selectedTemplate, 
+                        timestamp: new Date().toISOString() 
+                    });
+                    this.currentInvoice.exported = true; // FR-6 indikatorius
+                    this.showExportModalState = false;
+                    this.showToast(`Sąskaita eksportuota su "${this.selectedTemplate}" šablonu.`, 'success');
+                },
+
+                getExportableInvoices() {
+                    return this.invoices.filter(inv => inv.status === 'VALIDUOTA');
+                },
+                
+                toggleSelectAll(event) {
+                    this.getExportableInvoices().forEach(inv => inv.selectedForExport = event.target.checked);
+                },
+
+                performExport() {
+                    const selectedInvoices = this.getExportableInvoices().filter(inv => inv.selectedForExport);
+                    if (selectedInvoices.length === 0) {
+                        this.showToast('Pasirinkite bent vieną sąskaitą eksportui.', 'error');
+                        return;
+                    }
+                    
+                    selectedInvoices.forEach(inv => {
+                        this.exportLog.push({ 
+                            invoice_id: inv.id, 
+                            template: this.selectedTemplate, // Reikėtų gauti iš select
+                            timestamp: new Date().toISOString() 
+                        });
+                        inv.exported = true; // FR-6 indikatorius
+                        inv.selectedForExport = false; // Nustatyti atgal
+                    });
+
+                    this.showToast(`Sėkmingai eksportuota ${selectedInvoices.length} sąskaitų.`, 'success');
+                },
+
+
+                // Pagalbinės UI funkcijos
+                getProductName(productId) {
+                    return this.productMaster.find(p => p.id === productId)?.description || 'N/A';
+                },
+                statusClass(status) {
+                    return {
+                        'NAUJA': 'status-nauja',
+                        'REIKIA PERŽIŪROS': 'status-reikia-perziuros',
+                        'VALIDUOTA': 'status-validuota'
+                    }[status] || 'bg-gray-200 text-gray-800';
+                },
+                itemStatusClass(status) {
+                     return {
+                        'ATPAŽINTA': 'item-status-atpazinta',
+                        'REIKIA PATVIRTINIMO': 'item-status-reikia-patvirtinimo',
+                        'NEATPAŽINTA': 'item-status-neatpazinta'
+                    }[status] || '';
+                },
+
+                showToast(message, type = 'success') {
+                    this.toast.message = message;
+                    this.toast.type = type;
+                    this.toast.show = true;
+                    setTimeout(() => this.toast.show = false, 3000);
+                }
+            }));
+        });
+    </script>
+</body>
+</html>
